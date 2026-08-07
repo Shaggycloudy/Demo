@@ -1,35 +1,61 @@
-@Library('Shared')_
-pipeline{
-    agent { label 'dev-server'}
-    
-    stages{
-        stage("Code clone"){
-            steps{
-                sh "whoami"
-            clone("https://github.com/LondheShubham153/django-notes-app.git","main")
+pipeline {
+    agent any
+
+    stages {
+        stage('Code') {
+            steps {
+                echo 'This is cloning the code'
+                git url: 'https://github.com/omtechops/django-notes-app.git', branch: 'main'
+                echo 'My code cloning is done'
             }
         }
-        stage("Code Build"){
-            steps{
-            dockerbuild("notes-app","latest")
+        stage('Build') {
+            steps {
+                echo 'This is build the code'
+                sh 'docker build -t my-app:latest .'
+                echo 'My code is build'
             }
         }
-        stage("Push to DockerHub"){
-            steps{
-                dockerpush("dockerHubCreds","notes-app","latest")
+        stage('Test') {
+            steps {
+                echo 'This is Testing'
             }
         }
-        stage("Deploy"){
-            steps{
+        stage('Deploy') {
+            steps {
+                echo 'This is deploy the code'
                 sh '''
-                  if command -v docker-compose >/dev/null 2>&1; then
-                    docker-compose -f docker-compose.yml up -d --build
-                  else
-                    docker compose -f docker-compose.yml up -d --build
-                  fi
+                  docker network create notes-app-nw || true
+                  docker rm -f db || true
+                  docker rm -f django_app || true
+
+                  docker run -d \
+                    --name db \
+                    --network notes-app-nw \
+                    -e MYSQL_ROOT_PASSWORD=root \
+                    -e MYSQL_DATABASE=test_db \
+                    -v "$PWD/data/mysql/db:/var/lib/mysql" \
+                    mysql:latest
+
+                  until docker exec db mysqladmin ping -h localhost -uroot -proot >/dev/null 2>&1; do
+                    echo 'Waiting for MySQL to start...'
+                    sleep 5
+                  done
+
+                  docker run --rm \
+                    --network notes-app-nw \
+                    --env-file .env \
+                    my-app:latest \
+                    python manage.py migrate --noinput
+
+                  docker run -d \
+                    --name django_app \
+                    --network notes-app-nw \
+                    --env-file .env \
+                    -p 8000:8000 \
+                    my-app:latest
                 '''
             }
         }
-        
     }
 }
