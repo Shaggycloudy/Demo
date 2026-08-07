@@ -27,9 +27,9 @@ pipeline {
                 sh '''
                   docker network create notes-app-nw || true
                   docker rm -f db || true
-                  for c in $(docker ps -q --filter name=django_app); do docker rm -f "$c"; done || true
-                  for c in $(docker ps -q --filter ancestor=my-app:latest); do docker rm -f "$c"; done || true
-                  for c in $(docker ps -q --filter publish=8000); do docker rm -f "$c"; done || true
+                  docker rm -f django_app || true
+                  for c in $(docker ps -aq --filter ancestor=my-app:latest); do docker rm -f "$c"; done || true
+                  for c in $(docker ps -aq --filter publish=8000); do docker rm -f "$c"; done || true
 
                   docker run -d \
                     --name db \
