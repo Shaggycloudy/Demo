@@ -1,62 +1,61 @@
 pipeline {
     agent any
 
+    environment {
+        IMAGE_NAME = 'django-notes-app'
+        CONTAINER_NAME = 'django_app'
+        APP_PORT = '8000'
+    }
+
     stages {
-        stage('Code') {
+        stage('Checkout') {
             steps {
-                echo 'This is cloning the code'
-                git url: 'https://github.com/omtechops/django-notes-app.git', branch: 'main'
-                echo 'My code cloning is done'
+                script {
+                    def branch = sh(
+                        script: '''
+                            git ls-remote --heads https://github.com/omtechops/django-notes-app.git 'main' 'master' \
+                            | awk '{print $2}' \
+                            | sed 's|refs/heads/||' \
+                            | head -n 1
+                        ''',
+                        returnStdout: true
+                    ).trim()
+
+                    echo "Detected branch: ${branch}"
+
+                    if (!branch) {
+                        error 'No suitable branch found on the remote repository.'
+                    }
+
+                    git branch: branch, url: 'https://github.com/omtechops/django-notes-app.git'
+                }
             }
         }
+
         stage('Build') {
             steps {
-                echo 'This is build the code'
-                sh 'docker build -t my-app:latest .'
-                echo 'My code is build'
+                echo 'Building the Docker image'
+                sh "docker build -t ${IMAGE_NAME}:latest ."
             }
         }
+
         stage('Test') {
             steps {
-                echo 'This is Testing'
+                echo 'Running Django tests'
+                sh "docker run --rm ${IMAGE_NAME}:latest python manage.py test"
             }
         }
+
         stage('Deploy') {
             steps {
-                echo 'This is deploy the code'
-                sh '''
-                  docker network create notes-app-nw || true
-                  docker rm -f db || true
-                  docker rm -f django_app || true
-                  for c in $(docker ps -aq --filter ancestor=my-app:latest); do docker rm -f "$c"; done || true
-                  for c in $(docker ps -aq --filter publish=8000); do docker rm -f "$c"; done || true
-
-                  docker run -d \
-                    --name db \
-                    --network notes-app-nw \
-                    -e MYSQL_ROOT_PASSWORD=root \
-                    -e MYSQL_DATABASE=test_db \
-                    -v "$PWD/data/mysql/db:/var/lib/mysql" \
-                    mysql:latest
-
-                  until docker exec db mysqladmin ping -h localhost -uroot -proot >/dev/null 2>&1; do
-                    echo 'Waiting for MySQL to start...'
-                    sleep 5
-                  done
-
-                  docker run --rm \
-                    --network notes-app-nw \
-                    --env-file .env \
-                    my-app:latest \
-                    python manage.py migrate --noinput
-
-                  docker run -d \
-                    --name django_app \
-                    --network notes-app-nw \
-                    --env-file .env \
-                    -p 8000:8000 \
-                    my-app:latest
-                '''
+                echo 'Deploying the Django application'
+                sh """
+                    docker rm -f ${CONTAINER_NAME} || true
+                    docker run -d \
+                        --name ${CONTAINER_NAME} \
+                        -p ${APP_PORT}:${APP_PORT} \
+                        ${IMAGE_NAME}:latest
+                """
             }
         }
     }

@@ -12,5 +12,5 @@ COPY . /app/backend
 # Expose Django port
 EXPOSE 8000
 
-# Run the app
-CMD python manage.py runserver 0.0.0.0:8000
+# Run migrations and start the app
+CMD sh -c "python manage.py migrate --noinput && python manage.py runserver 0.0.0.0:8000"
